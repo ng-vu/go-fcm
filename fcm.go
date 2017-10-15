@@ -3,6 +3,7 @@ package fcm
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -69,6 +70,7 @@ type FcmResponseStatus struct {
 	MsgId         int64               `json:"message_id,omitempty"`
 	Err           string              `json:"error,omitempty"`
 	RetryAfter    string
+	RawResponse   []byte `json:"-"`
 }
 
 // NotificationPayload notification message payload
@@ -179,11 +181,22 @@ func (this *FcmClient) sendOnce() (*FcmResponseStatus, error) {
 	}
 
 	fcmRespStatus.StatusCode = response.StatusCode
-
 	fcmRespStatus.RetryAfter = response.Header.Get(retry_after_header)
+	fcmRespStatus.RawResponse = body
 
 	if response.StatusCode != 200 {
-		return fcmRespStatus, nil
+
+		// Try parsing the body
+		fcmResp2 := &FcmResponseStatus{
+			StatusCode:  fcmRespStatus.StatusCode,
+			RetryAfter:  fcmRespStatus.RetryAfter,
+			RawResponse: fcmRespStatus.RawResponse,
+		}
+		err = fcmResp2.parseStatusBody(body)
+		if err != nil {
+			return fcmRespStatus, errors.New(string(body))
+		}
+		return fcmResp2, nil
 	}
 
 	err = fcmRespStatus.parseStatusBody(body)
